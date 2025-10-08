@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pengingat Google Calendar EDU</title>
+  <meta name="theme-color" content="#0b1020" />
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" sizes="192x192">
+  <style>
+    body{margin:0;font-family:system-ui, sans-serif;background:#0b1020;color:#eef3ff;display:flex;justify-content:center;align-items:center;min-height:100vh;padding:20px}
+    .card{background:#121831;border-radius:20px;padding:30px;box-shadow:0 10px 30px rgba(0,0,0,.4);max-width:420px;width:100%}
+    h1{text-align:center;color:#66e3ff;margin-bottom:20px}
+    label{display:block;margin-bottom:8px;font-size:14px;color:#cfd8ff}
+    input, select{width:100%;padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,.2);background:#0f1530;color:#eef3ff;font-size:15px;margin-bottom:16px}
+    button{width:100%;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#66e3ff,#7cf29a);color:#081020;font-weight:600;cursor:pointer;font-size:16px}
+    .help{font-size:12px;color:#96a0c2;margin-top:-10px;margin-bottom:16px;text-align:center}
+    .inline{display:flex;gap:8px;align-items:center}
+    .icon-btn{padding:10px 12px;border:none;border-radius:10px;background:rgba(255,255,255,.08);color:#eef3ff;cursor:pointer}
+    .icon-btn:hover{background:rgba(255,255,255,.16)}
+    #installBtn{margin-top:10px;display:none}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Pengingat EDU</h1>
+
+    <div id="savedWrap" style="margin-bottom:10px;display:none">
+      <label for="savedNames">Pilih nama tersimpan</label>
+      <div class="inline">
+        <select id="savedNames"></select>
+        <button class="icon-btn" id="deleteName" title="Hapus nama yang dipilih">&times;</button>
+      </div>
+    </div>
+
+    <label for="nama">Nama orang</label>
+    <input id="nama" type="text" placeholder="Mis. Budi Santoso" required />
+
+    <label for="tanggal">Tanggal mulai</label>
+    <input id="tanggal" type="date" required />
+    <div class="help">Contoh: 2025-10-01 untuk 1 Oktober 2025</div>
+
+    <button id="addToGCal">Tambah ke Google Calendar</button>
+    <button id="installBtn">Install Aplikasi</button>
+  </div>
+
+  <script>
+    // ====== Manajemen daftar nama (localStorage) ======
+    const STORAGE_KEY = 'namaListV2';
+    const savedWrap = document.getElementById('savedWrap');
+    const savedNames = document.getElementById('savedNames');
+    const deleteNameBtn = document.getElementById('deleteName');
+    const namaInput = document.getElementById('nama');
+
+    function loadNames(){
+      try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'); }catch(e){ return []; }
+    }
+    function saveNames(arr){ localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); }
+    function renderNames(){
+      const list = loadNames();
+      savedWrap.style.display = list.length ? 'block' : 'none';
+      if(!list.length){ savedNames.innerHTML=''; return; }
+      savedNames.innerHTML = list.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('');
+    }
+    function addName(n){
+      const t = (n||'').trim();
+      if(!t) return;
+      const list = loadNames();
+      if(!list.includes(t)){
+        list.push(t);
+        list.sort((a,b)=>a.localeCompare(b,'id'));
+        saveNames(list);
+        renderNames();
+      }
+    }
+    function removeSelected(){
+      const sel = savedNames?.value;
+      if(!sel) return;
+      const list = loadNames().filter(n=>n!==sel);
+      saveNames(list);
+      renderNames();
+      if(namaInput.value===sel){ namaInput.value=''; }
+    }
+
+    document.addEventListener('DOMContentLoaded', ()=>{
+      renderNames();
+      savedNames?.addEventListener('change', ()=>{ if(savedNames.value) namaInput.value = savedNames.value; });
+      deleteNameBtn?.addEventListener('click', ()=>{ removeSelected(); });
+    });
+
+    // ====== Aksi tambah ke Google Calendar ======
+    document.getElementById('addToGCal').addEventListener('click', ()=>{
+      const nama = namaInput.value.trim();
+      const tanggal = document.getElementById('tanggal').value;
+      if(!nama || !tanggal){
+        alert('Mohon isi nama dan tanggal mulai.');
+        return;
+      }
+      // simpan nama
+      addName(nama);
+
+      const title = encodeURIComponent(`${nama} ISI PAKE EDU!!`);
+      const details = encodeURIComponent(`Pengingat berulang tiap 6 hari untuk ${nama}. Total 4 kejadian termasuk tanggal mulai. Waktu 11:00 WIB.`);
+      const startLocal = `${tanggal.replaceAll('-','')}T110000`;
+      const endLocal = `${tanggal.replaceAll('-','')}T120000`;
+      const rrule = encodeURIComponent('RRULE:FREQ=DAILY;INTERVAL=6;COUNT=4');
+      const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}&dates=${startLocal}/${endLocal}&ctz=Asia/Jakarta&recur=${rrule}`;
+      window.open(url,'_blank');
+    });
+
+    // ====== PWA Install & Service Worker ======
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js', {scope: './'}).catch(console.error);
+    }
+    const installBtn = document.getElementById('installBtn');
+    let deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e)=>{
+      e.preventDefault();
+      deferredPrompt = e;
+      installBtn.style.display = 'block';
+    });
+    installBtn.addEventListener('click', async ()=>{
+      if(!deferredPrompt) return; installBtn.disabled=true;
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice;
+      deferredPrompt = null;
+      installBtn.style.display = 'none';
+    });
+  </script>
+</body>
+</html>
