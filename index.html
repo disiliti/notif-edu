@@ -11,20 +11,21 @@
     :root{--bg:#0b1020;--card:#121831;--muted:#96a0c2;--text:#eef3ff;--accent1:#66e3ff;--accent2:#7cf29a}
     *{box-sizing:border-box}
     body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--text);display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
-    .card{width:100%;max-width:500px;background:var(--card);border-radius:16px;padding:20px 20px 24px;box-shadow:0 12px 30px rgba(4,10,28,.6)}
+    .card{width:100%;max-width:520px;background:var(--card);border-radius:16px;padding:20px 20px 24px;box-shadow:0 12px 30px rgba(4,10,28,.6)}
     h1{margin:0 0 12px;font-size:20px;color:var(--accent1);text-align:center}
     label{display:block;font-size:13px;color:#cfd8ff;margin-bottom:6px}
-    input,select,textarea{width:100%;padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:#0f1530;color:var(--text);margin-bottom:14px}
+    input,select,textarea{width:100%;padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:#0f1530;color:var(--text);margin-bottom:12px}
     button{padding:12px;border-radius:10px;border:0;cursor:pointer}
     .btn-primary{width:100%;background:linear-gradient(135deg,var(--accent1),var(--accent2));color:#081020;font-weight:700}
     .btn-secondary{width:100%;background:linear-gradient(135deg,#7cf29a,#66e3ff);color:#081020;font-weight:700}
     .row{display:flex;gap:10px}
-    .help{font-size:12px;color:var(--muted);text-align:center;margin-top:-8px;margin-bottom:12px}
-    .inline{display:flex;gap:10px}
+    .help{font-size:12px;color:#96a0c2;text-align:center;margin-top:-6px;margin-bottom:12px}
+    .inline{display:flex;gap:10px;flex-wrap:wrap}
     .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);color:#fff;padding:10px 14px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s}
     .toast.show{opacity:1}
     #installBtn{width:100%;margin-top:10px;background:#1f2746;color:#fff;border:1px solid rgba(255,255,255,.12)}
     #installBtn:hover{background:#243056}
+    .btn-ghost{background:#1f2746;border:1px solid rgba(255,255,255,.12);color:#fff}
   </style>
 </head>
 <body>
@@ -34,8 +35,10 @@
     <div id="savedWrap" style="display:none;margin-bottom:8px">
       <label for="savedList">Pilih nama tersimpan</label>
       <div class="inline">
-        <select id="savedList"></select>
-        <button id="delSaved" title="Hapus nama terpilih">×</button>
+        <select id="savedList" style="flex:1"></select>
+        <button id="delSaved" title="Hapus nama terpilih" class="btn-ghost">×</button>
+        <button id="exportBtn" class="btn-ghost">Export</button>
+        <label for="importInput" class="btn-ghost" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">Import<input id="importInput" type="file" accept="application/json" style="display:none"></label>
       </div>
     </div>
 
@@ -55,7 +58,10 @@
     </div>
 
     <label for="preview">Preview Nota WA</label>
-    <textarea id="preview" placeholder="Preview nota akan muncul di sini sebelum dikirim..."></textarea>
+    <textarea id="preview" placeholder="Preview nota akan muncul di sini sebelum dikirim..." rows="12"></textarea>
+    <div class="inline">
+      <button id="copyBtn" class="btn-ghost" style="flex:1">Salin Nota</button>
+    </div>
 
     <button id="installBtn">Install Aplikasi</button>
     <div class="help">Nama & nomor disimpan lokal (localStorage). WhatsApp akan terbuka untuk konfirmasi kirim.</div>
@@ -65,19 +71,22 @@
 
   <script>
     // ========= Utilities =========
-    const STORAGE_KEY = 'notifEdu_entries_v3_1'; // [{name, phone}]
+    const STORAGE_KEY = 'notifEdu_entries_v3_2'; // [{name, phone}]
     const el = (id)=>document.getElementById(id);
     const toast = (s)=>{ const n=el('toast'); if(!n) return; n.textContent=s; n.classList.add('show'); setTimeout(()=>n.classList.remove('show'),1600); };
 
     const savedWrap = el('savedWrap');
     const savedList = el('savedList');
     const delSaved  = el('delSaved');
+    const exportBtn = el('exportBtn');
+    const importInput = el('importInput');
     const namaInput = el('nama');
     const phoneInput= el('phone');
     const dateInput = el('tanggal');
     const btnGCal   = el('btnGCal');
     const btnWA     = el('btnWA');
     const previewTA = el('preview');
+    const copyBtn   = el('copyBtn');
     const installBtn= el('installBtn');
 
     function loadEntries(){ try{ const v = JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'); return Array.isArray(v)?v:[]; }catch(_){ return []; } }
@@ -107,12 +116,24 @@
       return s;
     }
 
-    // ===== UTC-safe date helpers =====
+    // ===== UTC-safe + Indonesian date formatting =====
+    const HARI = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+    const BULAN= ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+
     function addDaysISO(iso, days){
       const [y,m,d] = iso.split('-').map(Number);
       const dt = new Date(Date.UTC(y, m-1, d));
       dt.setUTCDate(dt.getUTCDate() + days);
       return dt.toISOString().slice(0,10);
+    }
+    function formatTanggalID(iso){
+      const [y,m,d] = iso.split('-').map(Number);
+      const dt = new Date(Date.UTC(y, m-1, d));
+      const hari  = HARI[dt.getUTCDay()];
+      const tgl   = dt.getUTCDate();
+      const bulan = BULAN[dt.getUTCMonth()];
+      const th    = dt.getUTCFullYear();
+      return `${hari}, ${tgl} ${bulan} ${th}`;
     }
     function buildDates7(startISO){
       return [0,7,14,21].map(off => addDaysISO(startISO, off));
@@ -120,7 +141,7 @@
 
     function buildWhatsAppNote(name, phone, startISO){
       const arr = buildDates7(startISO);
-      return [
+      const lines = [
         "[NOTA PEMBELIAN PAKET]",
         `Nama       : ${name}`,
         `Nomor WA   : ${phone}`,
@@ -128,20 +149,21 @@
         "Kuantitas  : 15 GB / minggu (≈ 60 GB / bulan)",
         "",
         "Status     : AKTIF",
-        `Tanggal Mulai : ${arr[0]}`,
+        `Tanggal Mulai : ${formatTanggalID(arr[0])} (${arr[0]})`,
         "",
         "Jadwal Isi Data (7-harian):",
-        `1) ${arr[0]} — 15 GB`,
-        `2) ${arr[1]} — 15 GB`,
-        `3) ${arr[2]} — 15 GB`,
-        `4) ${arr[3]} — 15 GB`,
+        `1) ${formatTanggalID(arr[0])} — 15 GB`,
+        `2) ${formatTanggalID(arr[1])} — 15 GB`,
+        `3) ${formatTanggalID(arr[2])} — 15 GB`,
+        `4) ${formatTanggalID(arr[3])} — 15 GB`,
         "",
         "Catatan:",
         "• Data 15 GB akan diperbarui otomatis setiap 7 hari sebanyak 4 kali.",
         "• Terima kasih telah memilih layanan kami.",
         "",
-        "— Indonesia Internet Murah!!"
-      ].join("\n");
+        "— ISI PAKE EDU!!"
+      ];
+      return lines.join("\n");
     }
 
     function updatePreview(){
@@ -152,11 +174,11 @@
     }
 
     function openGCal(name, startISO){
-      const title   = encodeURIComponent(`${name} ISI PAKET EDU!!`);
+      const title   = encodeURIComponent(`${name} ISI PAKE EDU!!`);
       const details = encodeURIComponent(`Pengingat berulang tiap 7 hari untuk ${name}. Total 4 kejadian termasuk tanggal mulai. Waktu 11:00 WIB.`);
       const start   = `${startISO.replaceAll('-','')}T110000`;
       const end     = `${startISO.replaceAll('-','')}T120000`;
-      const rrule   = encodeURIComponent('RRULE:FREQ=WEEKLY;INTERVAL=1;COUNT=4'); // tepat 7 hari
+      const rrule   = encodeURIComponent('RRULE:FREQ=WEEKLY;INTERVAL=1;COUNT=4');
       const url     = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}&dates=${start}/${end}&ctz=Asia/Jakarta&recur=${rrule}`;
       window.open(url, '_blank', 'noopener');
     }
@@ -214,6 +236,45 @@
         previewTA.value = note;
         openWhatsApp(phone, note);
         toast('Membuka WhatsApp...');
+      });
+
+      copyBtn.addEventListener('click', async ()=>{
+        try{ await navigator.clipboard.writeText(previewTA.value||''); toast('Nota disalin'); }catch(e){ toast('Gagal menyalin'); }
+      });
+
+      exportBtn.addEventListener('click', ()=>{
+        const data = JSON.stringify(loadEntries(), null, 2);
+        const blob = new Blob([data], {type:'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'notif-edu-data.json'; a.click();
+        URL.revokeObjectURL(url);
+      });
+
+      importInput.addEventListener('change', async (e)=>{
+        const file = e.target.files?.[0];
+        if(!file) return;
+        try{
+          const text = await file.text();
+          const arr = JSON.parse(text);
+          if(!Array.isArray(arr)) throw new Error('Format tidak valid');
+          const current = loadEntries();
+          const map = new Map(current.map(x=>[x.name, x.phone||'']));
+          for(const item of arr){
+            if(item && typeof item.name==='string'){
+              const phone = (item.phone||'').toString();
+              if(!map.has(item.name)) map.set(item.name, phone);
+              else if(phone) map.set(item.name, phone);
+            }
+          }
+          const merged = Array.from(map, ([name,phone])=>({name,phone})).sort((a,b)=>a.name.localeCompare(b.name,'id'));
+          saveEntries(merged); renderList();
+          toast('Import selesai');
+        }catch(err){
+          alert('Import gagal: '+err.message);
+        }finally{
+          e.target.value = '';
+        }
       });
 
       // PWA install flow
