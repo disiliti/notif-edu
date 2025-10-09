@@ -1,131 +1,208 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Pengingat Google Calendar EDU</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Pengingat EDU — PWA</title>
   <meta name="theme-color" content="#0b1020" />
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png" sizes="192x192">
   <style>
-    body{margin:0;font-family:system-ui, sans-serif;background:#0b1020;color:#eef3ff;display:flex;justify-content:center;align-items:center;min-height:100vh;padding:20px}
-    .card{background:#121831;border-radius:20px;padding:30px;box-shadow:0 10px 30px rgba(0,0,0,.4);max-width:420px;width:100%}
-    h1{text-align:center;color:#66e3ff;margin-bottom:20px}
-    label{display:block;margin-bottom:8px;font-size:14px;color:#cfd8ff}
-    input, select{width:100%;padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,.2);background:#0f1530;color:#eef3ff;font-size:15px;margin-bottom:16px}
-    button{width:100%;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#66e3ff,#7cf29a);color:#081020;font-weight:600;cursor:pointer;font-size:16px}
-    .help{font-size:12px;color:#96a0c2;margin-top:-10px;margin-bottom:16px;text-align:center}
-    .inline{display:flex;gap:8px;align-items:center}
-    .icon-btn{padding:10px 12px;border:none;border-radius:10px;background:rgba(255,255,255,.08);color:#eef3ff;cursor:pointer}
-    .icon-btn:hover{background:rgba(255,255,255,.16)}
-    #installBtn{margin-top:10px;display:none}
+    :root{--bg:#0b1020;--card:#121831;--muted:#96a0c2;--text:#eef3ff;--accent1:#66e3ff;--accent2:#7cf29a}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--text);display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+    .card{width:100%;max-width:480px;background:var(--card);border-radius:16px;padding:20px 20px 24px;box-shadow:0 12px 30px rgba(4,10,28,.6)}
+    h1{margin:0 0 12px;font-size:20px;color:var(--accent1);text-align:center}
+    label{display:block;font-size:13px;color:#cfd8ff;margin-bottom:6px}
+    input,select,textarea{width:100%;padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:#0f1530;color:var(--text);margin-bottom:14px}
+    button{padding:12px;border-radius:10px;border:0;cursor:pointer}
+    .btn-primary{width:100%;background:linear-gradient(135deg,var(--accent1),var(--accent2));color:#081020;font-weight:700}
+    .btn-secondary{width:100%;background:linear-gradient(135deg,#7cf29a,#66e3ff);color:#081020;font-weight:700}
+    .row{display:flex;gap:10px}
+    .help{font-size:12px;color:var(--muted);text-align:center;margin-top:-8px;margin-bottom:12px}
+    .inline{display:flex;gap:10px}
+    .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);color:#fff;padding:10px 14px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s}
+    .toast.show{opacity:1}
   </style>
 </head>
 <body>
-  <div class="card">
+  <main class="card" role="main">
     <h1>Pengingat EDU</h1>
 
-    <div id="savedWrap" style="margin-bottom:10px;display:none">
-      <label for="savedNames">Pilih nama tersimpan</label>
+    <div id="savedWrap" style="display:none;margin-bottom:8px">
+      <label for="savedList">Pilih nama tersimpan</label>
       <div class="inline">
-        <select id="savedNames"></select>
-        <button class="icon-btn" id="deleteName" title="Hapus nama yang dipilih">&times;</button>
+        <select id="savedList"></select>
+        <button id="delSaved" title="Hapus nama terpilih">×</button>
       </div>
     </div>
 
     <label for="nama">Nama orang</label>
-    <input id="nama" type="text" placeholder="Mis. Budi Santoso" required />
+    <input id="nama" type="text" placeholder="Mis. Budi Santoso" autocomplete="name" />
+
+    <label for="phone">Nomor handphone (WA)</label>
+    <input id="phone" type="tel" inputmode="tel" placeholder="Contoh: 081234567890 (otomatis jadi 62...)" />
 
     <label for="tanggal">Tanggal mulai</label>
-    <input id="tanggal" type="date" required />
-    <div class="help">Contoh: 2025-10-01 untuk 1 Oktober 2025</div>
+    <input id="tanggal" type="date" />
+    <div class="help">Event GCal otomatis 11:00–12:00 WIB • Jadwal isi data di nota: 7 hari x4</div>
 
-    <button id="addToGCal">Tambah ke Google Calendar</button>
-    <button id="installBtn">Install Aplikasi</button>
-  </div>
+    <div class="inline">
+      <button id="btnGCal" class="btn-primary" style="flex:1">Tambah ke Google Calendar</button>
+      <button id="btnWA" class="btn-secondary" style="flex:1">Kirim Notif WhatsApp</button>
+    </div>
+
+    <label for="preview">Preview Nota WA</label>
+    <textarea id="preview" placeholder="Preview nota akan muncul di sini sebelum dikirim..."></textarea>
+
+    <div class="help">Nama & nomor disimpan lokal (localStorage). WhatsApp akan terbuka untuk konfirmasi kirim.</div>
+  </main>
+
+  <div class="toast" id="toast"></div>
 
   <script>
-    // ====== Manajemen daftar nama (localStorage) ======
-    const STORAGE_KEY = 'namaListV2';
-    const savedWrap = document.getElementById('savedWrap');
-    const savedNames = document.getElementById('savedNames');
-    const deleteNameBtn = document.getElementById('deleteName');
-    const namaInput = document.getElementById('nama');
+    // ========= Utilities =========
+    const STORAGE_KEY = 'notifEdu_entries_v3'; // [{name, phone}]
+    const el = (id)=>document.getElementById(id);
+    const t = (s)=>{ const n=el('toast'); if(!n) return; n.textContent=s; n.classList.add('show'); setTimeout(()=>n.classList.remove('show'),1600); };
 
-    function loadNames(){
-      try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'); }catch(e){ return []; }
-    }
-    function saveNames(arr){ localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); }
-    function renderNames(){
-      const list = loadNames();
+    const savedWrap = el('savedWrap');
+    const savedList = el('savedList');
+    const delSaved  = el('delSaved');
+    const namaInput = el('nama');
+    const phoneInput= el('phone');
+    const dateInput = el('tanggal');
+    const btnGCal   = el('btnGCal');
+    const btnWA     = el('btnWA');
+    const previewTA = el('preview');
+
+    function loadEntries(){ try{ const v = JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'); return Array.isArray(v)?v:[]; }catch(_){ return []; } }
+    function saveEntries(arr){ localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); }
+    function upsertEntry(name, phone){ const list=loadEntries(); const i=list.findIndex(e=>e.name===name); if(i>=0) list[i].phone=phone||list[i].phone||''; else list.push({name,phone:phone||''}); list.sort((a,b)=>a.name.localeCompare(b.name,'id')); saveEntries(list); renderList(); }
+
+    function renderList(){
+      const list = loadEntries();
+      if(!savedWrap || !savedList) return; // guard
       savedWrap.style.display = list.length ? 'block' : 'none';
-      if(!list.length){ savedNames.innerHTML=''; return; }
-      savedNames.innerHTML = list.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">${n}</option>`).join('');
-    }
-    function addName(n){
-      const t = (n||'').trim();
-      if(!t) return;
-      const list = loadNames();
-      if(!list.includes(t)){
-        list.push(t);
-        list.sort((a,b)=>a.localeCompare(b,'id'));
-        saveNames(list);
-        renderNames();
-      }
-    }
-    function removeSelected(){
-      const sel = savedNames?.value;
-      if(!sel) return;
-      const list = loadNames().filter(n=>n!==sel);
-      saveNames(list);
-      renderNames();
-      if(namaInput.value===sel){ namaInput.value=''; }
+      savedList.innerHTML = list.map(e=>`<option value="${e.name.replace(/"/g,'&quot;')}">${e.name} — ${e.phone||''}</option>`).join('');
     }
 
-    document.addEventListener('DOMContentLoaded', ()=>{
-      renderNames();
-      savedNames?.addEventListener('change', ()=>{ if(savedNames.value) namaInput.value = savedNames.value; });
-      deleteNameBtn?.addEventListener('click', ()=>{ removeSelected(); });
-    });
-
-    // ====== Aksi tambah ke Google Calendar ======
-    document.getElementById('addToGCal').addEventListener('click', ()=>{
-      const nama = namaInput.value.trim();
-      const tanggal = document.getElementById('tanggal').value;
-      if(!nama || !tanggal){
-        alert('Mohon isi nama dan tanggal mulai.');
-        return;
-      }
-      // simpan nama
-      addName(nama);
-
-      const title = encodeURIComponent(`${nama} ISI PAKE EDU!!`);
-      const details = encodeURIComponent(`Pengingat berulang tiap 6 hari untuk ${nama}. Total 4 kejadian termasuk tanggal mulai. Waktu 11:00 WIB.`);
-      const startLocal = `${tanggal.replaceAll('-','')}T110000`;
-      const endLocal = `${tanggal.replaceAll('-','')}T120000`;
-      const rrule = encodeURIComponent('RRULE:FREQ=DAILY;INTERVAL=6;COUNT=4');
-      const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}&dates=${startLocal}/${endLocal}&ctz=Asia/Jakarta&recur=${rrule}`;
-      window.open(url,'_blank');
-    });
-
-    // ====== PWA Install & Service Worker ======
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js', {scope: './'}).catch(console.error);
+    function normalizePhone(raw){
+      if(!raw) return '';
+      let s = String(raw).replace(/[^0-9+]/g,'');
+      s = s.replace(/^\+/, '');
+      if(s.startsWith('0')) s = '62' + s.slice(1);
+      return s;
     }
-    const installBtn = document.getElementById('installBtn');
-    let deferredPrompt = null;
-    window.addEventListener('beforeinstallprompt', (e)=>{
-      e.preventDefault();
-      deferredPrompt = e;
-      installBtn.style.display = 'block';
-    });
-    installBtn.addEventListener('click', async ()=>{
-      if(!deferredPrompt) return; installBtn.disabled=true;
-      deferredPrompt.prompt();
-      await deferredPrompt.userChoice;
-      deferredPrompt = null;
-      installBtn.style.display = 'none';
-    });
+
+    function addDays(dateISO, days){
+      const d = new Date(dateISO + 'T00:00:00');
+      d.setDate(d.getDate() + days);
+      return d.toISOString().slice(0,10);
+    }
+
+    function buildDates7(startISO){
+      return [0,7,14,21].map(offset => addDays(startISO, offset));
+    }
+
+    function buildWhatsAppNote(name, phone, startISO){
+      const arr = buildDates7(startISO);
+      return [
+        "[NOTA PEMBELIAN PAKET]",
+        `Nama       : ${name}`,
+        `Nomor WA   : ${phone}`,
+        "Paket      : Trik Irit Internet",
+        "Kuantitas  : 15 GB / minggu (≈ 60 GB / bulan)",
+        "",
+        "Status     : AKTIF",
+        `Tanggal Mulai : ${arr[0]}`,
+        "",
+        "Jadwal Isi Data (7-harian):",
+        `1) ${arr[0]} — 15 GB`,
+        `2) ${arr[1]} — 15 GB`,
+        `3) ${arr[2]} — 15 GB`,
+        `4) ${arr[3]} — 15 GB`,
+        "",
+        "Catatan:",
+        "• Data 15 GB akan diperbarui otomatis setiap 7 hari sebanyak 4 kali.",
+        "• Terima kasih telah memilih layanan kami.",
+        "",
+        "— Indonesia Internet Murah!!"
+      ].join("\n");
+    }
+
+    function updatePreview(){
+      const name = (namaInput?.value||'').trim() || '{NAMA}';
+      const phone= normalizePhone((phoneInput?.value||'').trim() || '{NO_HP}');
+      const date = (dateInput?.value||'') || '2025-10-01';
+      if(previewTA) previewTA.value = buildWhatsAppNote(name, phone, date);
+    }
+
+    function openGCal(name, startISO){
+      const title   = encodeURIComponent(`${name} ISI PAKET EDU!!`);
+      const details = encodeURIComponent(`Pengingat berulang tiap 6 hari untuk ${name}. Total 4 kejadian termasuk tanggal mulai. Waktu 11:00 WIB.`);
+      const start   = `${startISO.replaceAll('-','')}T110000`;
+      const end     = `${startISO.replaceAll('-','')}T120000`;
+      const rrule   = encodeURIComponent('RRULE:FREQ=WEEKLY;INTERVAL=1;COUNT=4');
+      const url     = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}&dates=${start}/${end}&ctz=Asia/Jakarta&recur=${rrule}`;
+      window.open(url, '_blank', 'noopener');
+    }
+
+    function openWhatsApp(phone, text){
+      const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
+      window.open(url, '_blank', 'noopener');
+    }
+
+    function bindAll(){
+      renderList();
+      updatePreview();
+
+      savedList && savedList.addEventListener('change', ()=>{
+        const sel = savedList.value;
+        if(!sel) return;
+        const entry = loadEntries().find(e=>e.name===sel);
+        if(entry){ namaInput.value = entry.name; if(entry.phone) phoneInput.value = entry.phone; updatePreview(); }
+      });
+
+      delSaved && delSaved.addEventListener('click', ()=>{
+        const sel = savedList?.value;
+        if(!sel){ alert('Pilih nama yang ingin dihapus.'); return; }
+        if(!confirm('Hapus dari daftar?')) return;
+        const filtered = loadEntries().filter(e=>e.name!==sel);
+        saveEntries(filtered); renderList();
+        if(namaInput?.value===sel){ namaInput.value=''; phoneInput.value=''; updatePreview(); }
+        t('Nama dihapus');
+      });
+
+      [namaInput, phoneInput, dateInput].forEach(e=> e && ['input','change'].forEach(ev=> e.addEventListener(ev, updatePreview)));
+
+      btnGCal && btnGCal.addEventListener('click', ()=>{
+        const name = (namaInput?.value||'').trim();
+        const phone= normalizePhone((phoneInput?.value||'').trim());
+        const date = (dateInput?.value||'').trim();
+        if(!name || !date){ alert('Mohon isi Nama dan Tanggal mulai.'); return; }
+        upsertEntry(name, phone);
+        openGCal(name, date);
+        t('Membuka Google Calendar...');
+      });
+
+      btnWA && btnWA.addEventListener('click', ()=>{
+        const name = (namaInput?.value||'').trim();
+        const phone= normalizePhone((phoneInput?.value||'').trim());
+        const date = (dateInput?.value||'').trim();
+        if(!name || !phone || !date){ alert('Mohon isi Nama, Nomor WA, dan Tanggal mulai.'); return; }
+        upsertEntry(name, phone);
+        const note = buildWhatsAppNote(name, phone, date);
+        if(previewTA) previewTA.value = note;
+        openWhatsApp(phone, note);
+        t('Membuka WhatsApp...');
+      });
+    }
+
+    if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', bindAll); } else { bindAll(); }
+
+    // Register SW for PWA
+    if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js', {scope:'./'}).catch(console.error); }
   </script>
 </body>
 </html>
