@@ -11,7 +11,7 @@
     :root{--bg:#0b1020;--card:#121831;--muted:#96a0c2;--text:#eef3ff;--accent1:#66e3ff;--accent2:#7cf29a}
     *{box-sizing:border-box}
     body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--text);display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
-    .card{width:100%;max-width:480px;background:var(--card);border-radius:16px;padding:20px 20px 24px;box-shadow:0 12px 30px rgba(4,10,28,.6)}
+    .card{width:100%;max-width:500px;background:var(--card);border-radius:16px;padding:20px 20px 24px;box-shadow:0 12px 30px rgba(4,10,28,.6)}
     h1{margin:0 0 12px;font-size:20px;color:var(--accent1);text-align:center}
     label{display:block;font-size:13px;color:#cfd8ff;margin-bottom:6px}
     input,select,textarea{width:100%;padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:#0f1530;color:var(--text);margin-bottom:14px}
@@ -23,6 +23,8 @@
     .inline{display:flex;gap:10px}
     .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);color:#fff;padding:10px 14px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s}
     .toast.show{opacity:1}
+    #installBtn{width:100%;margin-top:10px;background:#1f2746;color:#fff;border:1px solid rgba(255,255,255,.12)}
+    #installBtn:hover{background:#243056}
   </style>
 </head>
 <body>
@@ -45,7 +47,7 @@
 
     <label for="tanggal">Tanggal mulai</label>
     <input id="tanggal" type="date" />
-    <div class="help">Event GCal otomatis 11:00–12:00 WIB • Jadwal isi data di nota: 7 hari x4</div>
+    <div class="help">Event GCal 11:00–12:00 WIB • RRULE 7-hari ×4 • Nota memuat jadwal isi data tiap 7 hari</div>
 
     <div class="inline">
       <button id="btnGCal" class="btn-primary" style="flex:1">Tambah ke Google Calendar</button>
@@ -55,6 +57,7 @@
     <label for="preview">Preview Nota WA</label>
     <textarea id="preview" placeholder="Preview nota akan muncul di sini sebelum dikirim..."></textarea>
 
+    <button id="installBtn">Install Aplikasi</button>
     <div class="help">Nama & nomor disimpan lokal (localStorage). WhatsApp akan terbuka untuk konfirmasi kirim.</div>
   </main>
 
@@ -62,9 +65,9 @@
 
   <script>
     // ========= Utilities =========
-    const STORAGE_KEY = 'notifEdu_entries_v3'; // [{name, phone}]
+    const STORAGE_KEY = 'notifEdu_entries_v3_1'; // [{name, phone}]
     const el = (id)=>document.getElementById(id);
-    const t = (s)=>{ const n=el('toast'); if(!n) return; n.textContent=s; n.classList.add('show'); setTimeout(()=>n.classList.remove('show'),1600); };
+    const toast = (s)=>{ const n=el('toast'); if(!n) return; n.textContent=s; n.classList.add('show'); setTimeout(()=>n.classList.remove('show'),1600); };
 
     const savedWrap = el('savedWrap');
     const savedList = el('savedList');
@@ -75,16 +78,25 @@
     const btnGCal   = el('btnGCal');
     const btnWA     = el('btnWA');
     const previewTA = el('preview');
+    const installBtn= el('installBtn');
 
     function loadEntries(){ try{ const v = JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'); return Array.isArray(v)?v:[]; }catch(_){ return []; } }
     function saveEntries(arr){ localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); }
-    function upsertEntry(name, phone){ const list=loadEntries(); const i=list.findIndex(e=>e.name===name); if(i>=0) list[i].phone=phone||list[i].phone||''; else list.push({name,phone:phone||''}); list.sort((a,b)=>a.name.localeCompare(b.name,'id')); saveEntries(list); renderList(); }
+
+    function upsertEntry(name, phone){
+      const list = loadEntries();
+      const i = list.findIndex(e=>e.name===name);
+      if(i>=0){ list[i].phone = phone || list[i].phone || ''; }
+      else { list.push({name, phone: phone||''}); }
+      list.sort((a,b)=>a.name.localeCompare(b.name,'id'));
+      saveEntries(list);
+      renderList();
+    }
 
     function renderList(){
       const list = loadEntries();
-      if(!savedWrap || !savedList) return; // guard
       savedWrap.style.display = list.length ? 'block' : 'none';
-      savedList.innerHTML = list.map(e=>`<option value="${e.name.replace(/"/g,'&quot;')}">${e.name} — ${e.phone||''}</option>`).join('');
+      savedList.innerHTML = list.map(e=>`<option value="${encodeURIComponent(e.name+'||'+(e.phone||''))}">${e.name} — ${e.phone||''}</option>`).join('');
     }
 
     function normalizePhone(raw){
@@ -95,14 +107,15 @@
       return s;
     }
 
-    function addDays(dateISO, days){
-      const d = new Date(dateISO + 'T00:00:00');
-      d.setDate(d.getDate() + days);
-      return d.toISOString().slice(0,10);
+    // ===== UTC-safe date helpers =====
+    function addDaysISO(iso, days){
+      const [y,m,d] = iso.split('-').map(Number);
+      const dt = new Date(Date.UTC(y, m-1, d));
+      dt.setUTCDate(dt.getUTCDate() + days);
+      return dt.toISOString().slice(0,10);
     }
-
     function buildDates7(startISO){
-      return [0,7,14,21].map(offset => addDays(startISO, offset));
+      return [0,7,14,21].map(off => addDaysISO(startISO, off));
     }
 
     function buildWhatsAppNote(name, phone, startISO){
@@ -127,23 +140,23 @@
         "• Data 15 GB akan diperbarui otomatis setiap 7 hari sebanyak 4 kali.",
         "• Terima kasih telah memilih layanan kami.",
         "",
-        "— Indonesia Internet Murah!!"
+        "— ISI PAKE EDU!!"
       ].join("\n");
     }
 
     function updatePreview(){
-      const name = (namaInput?.value||'').trim() || '{NAMA}';
-      const phone= normalizePhone((phoneInput?.value||'').trim() || '{NO_HP}');
-      const date = (dateInput?.value||'') || '2025-10-01';
-      if(previewTA) previewTA.value = buildWhatsAppNote(name, phone, date);
+      const name = (namaInput.value||'').trim() || '{NAMA}';
+      const phone= normalizePhone((phoneInput.value||'').trim() || '{NO_HP}');
+      const date = (dateInput.value||'') || '2025-10-01';
+      previewTA.value = buildWhatsAppNote(name, phone, date);
     }
 
     function openGCal(name, startISO){
-      const title   = encodeURIComponent(`${name} ISI PAKET EDU!!`);
-      const details = encodeURIComponent(`Pengingat berulang tiap 6 hari untuk ${name}. Total 4 kejadian termasuk tanggal mulai. Waktu 11:00 WIB.`);
+      const title   = encodeURIComponent(`${name} ISI PAKE EDU!!`);
+      const details = encodeURIComponent(`Pengingat berulang tiap 7 hari untuk ${name}. Total 4 kejadian termasuk tanggal mulai. Waktu 11:00 WIB.`);
       const start   = `${startISO.replaceAll('-','')}T110000`;
       const end     = `${startISO.replaceAll('-','')}T120000`;
-      const rrule   = encodeURIComponent('RRULE:FREQ=WEEKLY;INTERVAL=1;COUNT=4');
+      const rrule   = encodeURIComponent('RRULE:FREQ=WEEKLY;INTERVAL=1;COUNT=4'); // tepat 7 hari
       const url     = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}&dates=${start}/${end}&ctz=Asia/Jakarta&recur=${rrule}`;
       window.open(url, '_blank', 'noopener');
     }
@@ -157,52 +170,75 @@
       renderList();
       updatePreview();
 
-      savedList && savedList.addEventListener('change', ()=>{
-        const sel = savedList.value;
-        if(!sel) return;
-        const entry = loadEntries().find(e=>e.name===sel);
-        if(entry){ namaInput.value = entry.name; if(entry.phone) phoneInput.value = entry.phone; updatePreview(); }
+      savedList.addEventListener('change', ()=>{
+        const v = savedList.value;
+        if(!v) return;
+        const [name, phone] = decodeURIComponent(v).split('||');
+        namaInput.value = name || '';
+        phoneInput.value = phone || '';
+        updatePreview();
       });
 
-      delSaved && delSaved.addEventListener('click', ()=>{
-        const sel = savedList?.value;
-        if(!sel){ alert('Pilih nama yang ingin dihapus.'); return; }
-        if(!confirm('Hapus dari daftar?')) return;
-        const filtered = loadEntries().filter(e=>e.name!==sel);
+      delSaved.addEventListener('click', ()=>{
+        const v = savedList.value;
+        if(!v){ alert('Pilih nama yang ingin dihapus.'); return; }
+        const [name, phone] = decodeURIComponent(v).split('||');
+        if(!confirm(`Hapus ${name}${phone?' ('+phone+')':''} dari daftar?`)) return;
+        const filtered = loadEntries().filter(e=>!(e.name===name && e.phone===phone));
         saveEntries(filtered); renderList();
-        if(namaInput?.value===sel){ namaInput.value=''; phoneInput.value=''; updatePreview(); }
-        t('Nama dihapus');
+        if(namaInput.value===name){ namaInput.value=''; phoneInput.value=''; updatePreview(); }
+        toast('Nama dihapus');
       });
 
-      [namaInput, phoneInput, dateInput].forEach(e=> e && ['input','change'].forEach(ev=> e.addEventListener(ev, updatePreview)));
+      [namaInput, phoneInput, dateInput].forEach(elm=>{
+        ['input','change'].forEach(ev=> elm.addEventListener(ev, updatePreview));
+      });
 
-      btnGCal && btnGCal.addEventListener('click', ()=>{
-        const name = (namaInput?.value||'').trim();
-        const phone= normalizePhone((phoneInput?.value||'').trim());
-        const date = (dateInput?.value||'').trim();
+      btnGCal.addEventListener('click', ()=>{
+        const name = (namaInput.value||'').trim();
+        const phone= normalizePhone((phoneInput.value||'').trim());
+        const date = (dateInput.value||'').trim();
         if(!name || !date){ alert('Mohon isi Nama dan Tanggal mulai.'); return; }
         upsertEntry(name, phone);
         openGCal(name, date);
-        t('Membuka Google Calendar...');
+        toast('Membuka Google Calendar...');
       });
 
-      btnWA && btnWA.addEventListener('click', ()=>{
-        const name = (namaInput?.value||'').trim();
-        const phone= normalizePhone((phoneInput?.value||'').trim());
-        const date = (dateInput?.value||'').trim();
+      btnWA.addEventListener('click', ()=>{
+        const name = (namaInput.value||'').trim();
+        const phone= normalizePhone((phoneInput.value||'').trim());
+        const date = (dateInput.value||'').trim();
         if(!name || !phone || !date){ alert('Mohon isi Nama, Nomor WA, dan Tanggal mulai.'); return; }
         upsertEntry(name, phone);
         const note = buildWhatsAppNote(name, phone, date);
-        if(previewTA) previewTA.value = note;
+        previewTA.value = note;
         openWhatsApp(phone, note);
-        t('Membuka WhatsApp...');
+        toast('Membuka WhatsApp...');
+      });
+
+      // PWA install flow
+      let deferredPrompt = null;
+      window.addEventListener('beforeinstallprompt', (e)=>{
+        e.preventDefault(); deferredPrompt = e;
+        installBtn.style.display = 'block';
+      });
+      installBtn.addEventListener('click', async ()=>{
+        if(!deferredPrompt) return;
+        installBtn.disabled = true;
+        deferredPrompt.prompt();
+        await deferredPrompt.userChoice;
+        deferredPrompt = null;
+        installBtn.style.display = 'none';
       });
     }
 
-    if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', bindAll); } else { bindAll(); }
+    if(document.readyState === 'loading'){ document.addEventListener('DOMContentLoaded', bindAll); }
+    else { bindAll(); }
 
-    // Register SW for PWA
-    if('serviceWorker' in navigator){ navigator.serviceWorker.register('sw.js', {scope:'./'}).catch(console.error); }
+    // Register SW
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.register('sw.js', {scope: './'}).catch(console.error);
+    }
   </script>
 </body>
 </html>
