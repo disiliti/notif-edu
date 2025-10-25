@@ -286,17 +286,19 @@
         ['input','change'].forEach(ev=> elm.addEventListener(ev, updatePreview));
       });
 
-      btnGCal.addEventListener('click', ()=>{
-        const name = (namaInput.value||'').trim();
-        const phone= normalizePhone((phoneInput.value||'').trim());
-        const date = (dateInput.value||'').trim();
-        if(!name || !date){ alert('Mohon isi Nama dan Tanggal mulai.'); return; }
-        upsertEntry(name, phone, date);
-        addSeries(name, date);
-        openGCal(name, date);
-        scheduleInAppReminder(name);
-        toast('Membuka Google Calendar...');
-      });
+btnGCal.addEventListener('click', ()=>{
+  const name = (namaInput.value||'').trim();
+  const phone= normalizePhone((phoneInput.value||'').trim());
+  const date = (dateInput.value||'').trim();
+  if(!name || !date){ alert('Mohon isi Nama dan Tanggal mulai.'); return; }
+  upsertEntry(name, phone, date);
+  addSeries(name, date);
+  checkSeriesStatus(name); // <= tambahkan ini agar banner langsung evaluasi
+  openGCal(name, date);
+  scheduleInAppReminder(name);
+  toast('Membuka Google Calendar...');
+});
+
 
       btnWA.addEventListener('click', ()=>{
         const name = (namaInput.value||'').trim();
