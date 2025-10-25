@@ -11,26 +11,37 @@
     :root{--bg:#0b1020;--card:#121831;--muted:#96a0c2;--text:#eef3ff;--accent1:#66e3ff;--accent2:#7cf29a}
     *{box-sizing:border-box}
     body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--text);display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
-    .card{width:100%;max-width:520px;background:var(--card);border-radius:16px;padding:20px 20px 24px;box-shadow:0 12px 30px rgba(4,10,28,.6)}
+    .card{width:100%;max-width:540px;background:var(--card);border-radius:16px;padding:20px 20px 24px;box-shadow:0 12px 30px rgba(4,10,28,.6)}
     h1{margin:0 0 12px;font-size:20px;color:var(--accent1);text-align:center}
     label{display:block;font-size:13px;color:#cfd8ff;margin-bottom:6px}
     input,select,textarea{width:100%;padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:#0f1530;color:var(--text);margin-bottom:12px}
     button{padding:12px;border-radius:10px;border:0;cursor:pointer}
     .btn-primary{width:100%;background:linear-gradient(135deg,var(--accent1),var(--accent2));color:#081020;font-weight:700}
     .btn-secondary{width:100%;background:linear-gradient(135deg,#7cf29a,#66e3ff);color:#081020;font-weight:700}
+    .btn-ghost{background:#1f2746;border:1px solid rgba(255,255,255,.12);color:#fff}
     .row{display:flex;gap:10px}
     .help{font-size:12px;color:#96a0c2;text-align:center;margin-top:-6px;margin-bottom:12px}
     .inline{display:flex;gap:10px;flex-wrap:wrap}
-    .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);color:#fff;padding:10px 14px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s}
+    .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);color:#fff;padding:10px 14px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:99}
     .toast.show{opacity:1}
     #installBtn{width:100%;margin-top:10px;background:#1f2746;color:#fff;border:1px solid rgba(255,255,255,.12)}
     #installBtn:hover{background:#243056}
-    .btn-ghost{background:#1f2746;border:1px solid rgba(255,255,255,.12);color:#fff}
+    .banner{background:#0f1a3a;border:1px solid rgba(255,255,255,.1);padding:12px;border-radius:12px;margin:10px 0;color:#e8edff}
+    .banner .small{font-size:12px;color:#aab2d9;margin-top:6px}
   </style>
 </head>
 <body>
   <main class="card" role="main">
     <h1>Pengingat EDU</h1>
+
+    <div id="doneBanner" class="banner" style="display:none">
+      <div><strong>Seri pengisian selesai.</strong> Kamu bisa bersihkan jadwal di Google Calendar atau hapus dari daftar lokal.</div>
+      <div class="small" id="doneInfo"></div>
+      <div class="inline" style="margin-top:8px">
+        <button id="btnCleanGCal" class="btn-ghost" style="flex:1">Bersihkan di Kalender</button>
+        <button id="btnCleanLocal" class="btn-ghost" style="flex:1">Bersihkan daftar lokal</button>
+      </div>
+    </div>
 
     <div id="savedWrap" style="display:none;margin-bottom:8px">
       <label for="savedList">Pilih nama tersimpan</label>
@@ -61,20 +72,65 @@
     <textarea id="preview" placeholder="Preview nota akan muncul di sini sebelum dikirim..." rows="12"></textarea>
     <div class="inline">
       <button id="copyBtn" class="btn-ghost" style="flex:1">Salin Nota</button>
+      <button id="notifyBtn" class="btn-ghost" style="flex:1">Aktifkan Notifikasi</button>
     </div>
 
     <button id="installBtn">Install Aplikasi</button>
-    <div class="help">Nama & nomor disimpan lokal (localStorage). WhatsApp akan terbuka untuk konfirmasi kirim.</div>
+    <div class="help">Nama & nomor disimpan lokal. Notifikasi web muncul saat aplikasi terbuka & izin diberikan.</div>
   </main>
 
   <div class="toast" id="toast"></div>
 
   <script>
     // ========= Utilities =========
-    const STORAGE_KEY = 'notifEdu_entries_v3_2'; // [{name, phone}]
+    const STORAGE_KEY = 'notifEdu_entries_v3_2_1'; // [{name, phone, lastStartISO}]
+    const SERIES_KEY  = 'notifEdu_series_v1';      // [{name, startISO, endISO, title}]
     const el = (id)=>document.getElementById(id);
-    const toast = (s)=>{ const n=el('toast'); if(!n) return; n.textContent=s; n.classList.add('show'); setTimeout(()=>n.classList.remove('show'),1600); };
+    const toast = (s)=>{ const n=el('toast'); if(!n) return; n.textContent=s; n.classList.add('show'); setTimeout(()=>n.classList.remove('show'),1800); };
 
+    const HARI = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+    const BULAN= ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+
+    function addDaysISO(iso, days){
+      const [y,m,d] = iso.split('-').map(Number);
+      const dt = new Date(Date.UTC(y, m-1, d));
+      dt.setUTCDate(dt.getUTCDate() + days);
+      return dt.toISOString().slice(0,10);
+    }
+    function formatTanggalID(iso){
+      const [y,m,d] = iso.split('-').map(Number);
+      const dt = new Date(Date.UTC(y, m-1, d));
+      return `${HARI[dt.getUTCDay()]}, ${dt.getUTCDate()} ${BULAN[dt.getUTCMonth()]} ${dt.getUTCFullYear()}`;
+    }
+    function buildDates7(startISO){ return [0,7,14,21].map(off => addDaysISO(startISO, off)); }
+
+    // ===== Storage: entries & series =====
+    function loadEntries(){ try{ const v=JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'); return Array.isArray(v)?v:[]; }catch(_){ return []; } }
+    function saveEntries(arr){ localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); }
+    function upsertEntry(name, phone, startISO){
+      const list = loadEntries();
+      const i = list.findIndex(e=>e.name===name);
+      if(i>=0){ list[i].phone = phone || list[i].phone || ''; list[i].lastStartISO = startISO || list[i].lastStartISO || ''; }
+      else { list.push({name, phone: phone||'', lastStartISO: startISO||''}); }
+      list.sort((a,b)=>a.name.localeCompare(b.name,'id')); saveEntries(list); renderList();
+    }
+
+    function loadSeries(){ try{ const v=JSON.parse(localStorage.getItem(SERIES_KEY)||'[]'); return Array.isArray(v)?v:[]; }catch(_){ return []; } }
+    function saveSeries(arr){ localStorage.setItem(SERIES_KEY, JSON.stringify(arr)); }
+    function addSeries(name, startISO){
+      const title = `${name} ISI PAKE EDU!!`;
+      const endISO = addDaysISO(startISO, 21); // last occurrence (+21d)
+      const s = loadSeries();
+      const filtered = s.filter(x=>x.name!==name);
+      filtered.push({name, startISO, endISO, title});
+      saveSeries(filtered);
+    }
+    function removeSeriesByName(name){
+      const s = loadSeries().filter(x=>x.name!==name);
+      saveSeries(s);
+    }
+
+    // ===== UI elements =====
     const savedWrap = el('savedWrap');
     const savedList = el('savedList');
     const delSaved  = el('delSaved');
@@ -88,19 +144,11 @@
     const previewTA = el('preview');
     const copyBtn   = el('copyBtn');
     const installBtn= el('installBtn');
-
-    function loadEntries(){ try{ const v = JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'); return Array.isArray(v)?v:[]; }catch(_){ return []; } }
-    function saveEntries(arr){ localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); }
-
-    function upsertEntry(name, phone){
-      const list = loadEntries();
-      const i = list.findIndex(e=>e.name===name);
-      if(i>=0){ list[i].phone = phone || list[i].phone || ''; }
-      else { list.push({name, phone: phone||''}); }
-      list.sort((a,b)=>a.name.localeCompare(b.name,'id'));
-      saveEntries(list);
-      renderList();
-    }
+    const notifyBtn = el('notifyBtn');
+    const doneBanner= el('doneBanner');
+    const doneInfo  = el('doneInfo');
+    const btnCleanGCal = el('btnCleanGCal');
+    const btnCleanLocal= el('btnCleanLocal');
 
     function renderList(){
       const list = loadEntries();
@@ -114,29 +162,6 @@
       s = s.replace(/^\+/, '');
       if(s.startsWith('0')) s = '62' + s.slice(1);
       return s;
-    }
-
-    // ===== UTC-safe + Indonesian date formatting =====
-    const HARI = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
-    const BULAN= ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
-
-    function addDaysISO(iso, days){
-      const [y,m,d] = iso.split('-').map(Number);
-      const dt = new Date(Date.UTC(y, m-1, d));
-      dt.setUTCDate(dt.getUTCDate() + days);
-      return dt.toISOString().slice(0,10);
-    }
-    function formatTanggalID(iso){
-      const [y,m,d] = iso.split('-').map(Number);
-      const dt = new Date(Date.UTC(y, m-1, d));
-      const hari  = HARI[dt.getUTCDay()];
-      const tgl   = dt.getUTCDate();
-      const bulan = BULAN[dt.getUTCMonth()];
-      const th    = dt.getUTCFullYear();
-      return `${hari}, ${tgl} ${bulan} ${th}`;
-    }
-    function buildDates7(startISO){
-      return [0,7,14,21].map(off => addDaysISO(startISO, off));
     }
 
     function buildWhatsAppNote(name, phone, startISO){
@@ -161,7 +186,7 @@
         "• Data 15 GB akan diperbarui otomatis setiap 7 hari sebanyak 4 kali.",
         "• Terima kasih telah memilih layanan kami.",
         "",
-        "— Menuju Indonesia Internet Murah!!"
+        "— ISI PAKE EDU!!"
       ];
       return lines.join("\n");
     }
@@ -171,10 +196,11 @@
       const phone= normalizePhone((phoneInput.value||'').trim() || '{NO_HP}');
       const date = (dateInput.value||'') || '2025-10-01';
       previewTA.value = buildWhatsAppNote(name, phone, date);
+      checkSeriesStatus(name);
     }
 
     function openGCal(name, startISO){
-      const title   = encodeURIComponent(`${name} ISI PAKET EDU!!`);
+      const title   = encodeURIComponent(`${name} ISI PAKE EDU!!`);
       const details = encodeURIComponent(`Pengingat berulang tiap 7 hari untuk ${name}. Total 4 kejadian termasuk tanggal mulai. Waktu 11:00 WIB.`);
       const start   = `${startISO.replaceAll('-','')}T110000`;
       const end     = `${startISO.replaceAll('-','')}T120000`;
@@ -188,6 +214,49 @@
       window.open(url, '_blank', 'noopener');
     }
 
+    // ===== Series status & notifications =====
+    function nowISO(){ const d=new Date(); return d.toISOString().slice(0,10); }
+    function checkSeriesStatus(name){
+      const sAll = loadSeries();
+      const s = sAll.find(x=>x.name===name);
+      if(!s){ doneBanner.style.display='none'; return; }
+      const today = nowISO();
+      if(today > s.endISO){
+        doneBanner.style.display='block';
+        doneInfo.textContent = `Seri ${name} selesai pada ${formatTanggalID(s.endISO)} (${s.endISO}).`;
+      } else {
+        doneBanner.style.display='none';
+      }
+    }
+
+    async function ensureNotifPermission(){
+      if(!('Notification' in window)) return false;
+      if(Notification.permission==='granted') return true;
+      if(Notification.permission!=='denied'){
+        const res = await Notification.requestPermission();
+        return res==='granted';
+      }
+      return false;
+    }
+    async function notify(msg){
+      try{
+        const ok = await ensureNotifPermission();
+        if(ok) new Notification('Pengingat EDU', { body: msg });
+        else toast(msg);
+      }catch(_){ toast(msg); }
+    }
+
+    function scheduleInAppReminder(name){
+      const s = loadSeries().find(x=>x.name===name);
+      if(!s) return;
+      const end = new Date(s.endISO + 'T09:00:00Z');
+      const delay = end.getTime() - Date.now();
+      if(delay > 0 && delay < 7*24*3600*1000){
+        setTimeout(()=> notify(`Seri ${name} telah selesai (${s.endISO}). Silakan bersihkan jadwal di Kalender.`), delay);
+      }
+    }
+
+    // ===== Bind all =====
     function bindAll(){
       renderList();
       updatePreview();
@@ -206,8 +275,9 @@
         if(!v){ alert('Pilih nama yang ingin dihapus.'); return; }
         const [name, phone] = decodeURIComponent(v).split('||');
         if(!confirm(`Hapus ${name}${phone?' ('+phone+')':''} dari daftar?`)) return;
-        const filtered = loadEntries().filter(e=>!(e.name===name && e.phone===phone));
-        saveEntries(filtered); renderList();
+        const list = loadEntries().filter(e=>!(e.name===name && e.phone===phone));
+        saveEntries(list); renderList();
+        removeSeriesByName(name);
         if(namaInput.value===name){ namaInput.value=''; phoneInput.value=''; updatePreview(); }
         toast('Nama dihapus');
       });
@@ -221,8 +291,10 @@
         const phone= normalizePhone((phoneInput.value||'').trim());
         const date = (dateInput.value||'').trim();
         if(!name || !date){ alert('Mohon isi Nama dan Tanggal mulai.'); return; }
-        upsertEntry(name, phone);
+        upsertEntry(name, phone, date);
+        addSeries(name, date);
         openGCal(name, date);
+        scheduleInAppReminder(name);
         toast('Membuka Google Calendar...');
       });
 
@@ -231,7 +303,7 @@
         const phone= normalizePhone((phoneInput.value||'').trim());
         const date = (dateInput.value||'').trim();
         if(!name || !phone || !date){ alert('Mohon isi Nama, Nomor WA, dan Tanggal mulai.'); return; }
-        upsertEntry(name, phone);
+        upsertEntry(name, phone, date);
         const note = buildWhatsAppNote(name, phone, date);
         previewTA.value = note;
         openWhatsApp(phone, note);
@@ -246,8 +318,7 @@
         const data = JSON.stringify(loadEntries(), null, 2);
         const blob = new Blob([data], {type:'application/json'});
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = 'notif-edu-data.json'; a.click();
+        const a = document.createElement('a'); a.href = url; a.download = 'notif-edu-data.json'; a.click();
         URL.revokeObjectURL(url);
       });
 
@@ -270,27 +341,42 @@
           const merged = Array.from(map, ([name,phone])=>({name,phone})).sort((a,b)=>a.name.localeCompare(b.name,'id'));
           saveEntries(merged); renderList();
           toast('Import selesai');
-        }catch(err){
-          alert('Import gagal: '+err.message);
-        }finally{
-          e.target.value = '';
-        }
+        }catch(err){ alert('Import gagal: '+err.message); } finally { e.target.value=''; }
+      });
+
+      notifyBtn.addEventListener('click', async ()=>{
+        const ok = await ensureNotifPermission();
+        toast(ok? 'Notifikasi diizinkan' : 'Notifikasi tidak diizinkan');
+      });
+
+      btnCleanGCal.addEventListener('click', ()=>{
+        const name = (namaInput.value||'').trim(); if(!name){ alert('Isi nama terlebih dahulu.'); return; }
+        const title = encodeURIComponent(`${name} ISI PAKE EDU!!`);
+        const url = `https://calendar.google.com/calendar/u/0/r/search?q=${title}`;
+        window.open(url, '_blank', 'noopener');
+      });
+
+      btnCleanLocal.addEventListener('click', ()=>{
+        const name = (namaInput.value||'').trim(); if(!name){ alert('Isi nama terlebih dahulu.'); return; }
+        removeSeriesByName(name);
+        toast('Seri lokal dibersihkan');
+        checkSeriesStatus(name);
       });
 
       // PWA install flow
       let deferredPrompt = null;
       window.addEventListener('beforeinstallprompt', (e)=>{
-        e.preventDefault(); deferredPrompt = e;
-        installBtn.style.display = 'block';
+        e.preventDefault(); deferredPrompt = e; installBtn.style.display='block';
       });
       installBtn.addEventListener('click', async ()=>{
         if(!deferredPrompt) return;
         installBtn.disabled = true;
-        deferredPrompt.prompt();
-        await deferredPrompt.userChoice;
-        deferredPrompt = null;
-        installBtn.style.display = 'none';
+        deferredPrompt.prompt(); await deferredPrompt.userChoice;
+        deferredPrompt = null; installBtn.style.display='none';
       });
+
+      const curName = (namaInput.value||'').trim();
+      if(curName) { checkSeriesStatus(curName); scheduleInAppReminder(curName); }
     }
 
     if(document.readyState === 'loading'){ document.addEventListener('DOMContentLoaded', bindAll); }
